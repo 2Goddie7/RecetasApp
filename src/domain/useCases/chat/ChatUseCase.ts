@@ -4,6 +4,7 @@ import { RealtimeChannel } from "@supabase/supabase-js";
 
 export class ChatUseCase {
   private channel: RealtimeChannel | null = null;
+  private typingChannel: RealtimeChannel | null = null;
 
   // Obtener mensajes históricos
   async obtenerMensajes(limite: number = 50): Promise<Mensaje[]> {
@@ -22,17 +23,38 @@ export class ChatUseCase {
         throw error;
       }
 
-      // Mapear la respuesta para que tenga la estructura correcta
       const mensajesFormateados = (data || []).map((msg: any) => ({
         ...msg,
-        usuario: msg.usuarios // Renombrar usuarios a usuario
+        usuario: msg.usuarios
       }));
 
-      // Invertir el orden para mostrar del más antiguo al más reciente
       return mensajesFormateados.reverse() as Mensaje[];
     } catch (error) {
       console.error("Error al obtener mensajes:", error);
       return [];
+    }
+  }
+
+  // Obtener email del usuario actual
+  async obtenerEmailUsuario(): Promise<string | null> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const { data, error } = await supabase
+        .from("usuarios")
+        .select("email")
+        .eq("id", user.id)
+        .single();
+
+      if (error || !data) {
+        return user.email || null;
+      }
+
+      return data.email;
+    } catch (error) {
+      console.error("Error al obtener email:", error);
+      return null;
     }
   }
 
@@ -61,9 +83,34 @@ export class ChatUseCase {
     }
   }
 
+  // Notificar escribiendo (broadcast ligero)
+  async notificarEscribiendo(userId: string, email: string, isTyping: boolean) {
+    try {
+      if (!this.typingChannel) {
+        this.typingChannel = supabase.channel('typing-channel');
+        await this.typingChannel.subscribe();
+      }
+
+      await this.typingChannel.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: {
+          userId,
+          email,
+          isTyping,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      console.error("Error al notificar escribiendo:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
   // Suscribirse a nuevos mensajes en tiempo real
   suscribirseAMensajes(callback: (mensaje: Mensaje) => void) {
-    // Crear canal único para esta suscripción
     this.channel = supabase.channel('mensajes-channel');
 
     this.channel
@@ -78,7 +125,6 @@ export class ChatUseCase {
           console.log('📨 Nuevo mensaje recibido!', payload.new);
 
           try {
-            // Obtener información completa del mensaje con el usuario
             const { data, error } = await supabase
               .from("mensajes")
               .select(`
@@ -90,8 +136,6 @@ export class ChatUseCase {
 
             if (error) {
               console.error('⚠️ Error al obtener mensaje completo:', error);
-
-              // Fallback: usar los datos del payload si falla el JOIN
               const mensajeFallback: Mensaje = {
                 id: payload.new.id,
                 contenido: payload.new.contenido,
@@ -102,14 +146,11 @@ export class ChatUseCase {
                   rol: 'usuario'
                 }
               };
-
-              console.log('🔄 Usando mensaje fallback');
               callback(mensajeFallback);
               return;
             }
 
             if (data) {
-              // Formatear el mensaje
               const mensajeFormateado: Mensaje = {
                 id: data.id,
                 contenido: data.contenido,
@@ -122,8 +163,6 @@ export class ChatUseCase {
             }
           } catch (err) {
             console.error('❌ Error inesperado:', err);
-
-            // Fallback final
             const mensajeFallback: Mensaje = {
               id: payload.new.id,
               contenido: payload.new.contenido,
@@ -134,7 +173,6 @@ export class ChatUseCase {
                 rol: 'usuario'
               }
             };
-
             callback(mensajeFallback);
           }
         }
@@ -143,7 +181,6 @@ export class ChatUseCase {
         console.log('Estado de suscripción:', status);
       });
 
-    // Retornar función para desuscribirse
     return () => {
       if (this.channel) {
         supabase.removeChannel(this.channel);
@@ -152,7 +189,36 @@ export class ChatUseCase {
     };
   }
 
-  // Eliminar un mensaje (opcional)
+  // Suscribirse a eventos de "typing" (broadcasts)
+  suscribirseAEscritura(callback: (payload: any) => void) {
+    this.typingChannel = supabase.channel('typing-channel');
+
+    this.typingChannel
+      .on(
+        'broadcast',
+        { event: 'typing' },
+        (broadcastPayload) => {
+          // ⚠️ IMPORTANTE: El payload real está en broadcastPayload.payload
+          console.log('📝 Evento typing recibido:', broadcastPayload);
+          
+          if (broadcastPayload && broadcastPayload.payload) {
+            callback(broadcastPayload.payload);
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('Estado suscripción typing:', status);
+      });
+
+    return () => {
+      if (this.typingChannel) {
+        supabase.removeChannel(this.typingChannel);
+        this.typingChannel = null;
+      }
+    };
+  }
+
+  // Eliminar un mensaje
   async eliminarMensaje(mensajeId: string): Promise<{ success: boolean; error?: string }> {
     try {
       const { error } = await supabase

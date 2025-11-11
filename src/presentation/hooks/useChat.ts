@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { ChatUseCase } from "@/src/domain/useCases/chat/ChatUseCase";
 import { Mensaje } from "@/src/domain/models/Mensaje";
+import { supabase } from "@/src/data/services/supabaseClient";
 
 const chatUseCase = new ChatUseCase();
 
@@ -8,6 +9,23 @@ export const useChat = () => {
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [cargando, setCargando] = useState(true);
   const [enviando, setEnviando] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<{ userId: string; email: string; isTyping?: boolean }[]>([]);
+  const [currentUser, setCurrentUser] = useState<{ id: string; email: string } | null>(null);
+  
+  // Timer para limpiar usuarios que dejaron de escribir
+  const typingTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
+
+  // Obtener usuario actual
+  useEffect(() => {
+    const obtenerUsuario = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const email = await chatUseCase.obtenerEmailUsuario();
+        setCurrentUser({ id: user.id, email: email || user.email || 'Anónimo' });
+      }
+    };
+    obtenerUsuario();
+  }, []);
 
   // Cargar mensajes históricos
   const cargarMensajes = useCallback(async () => {
@@ -25,8 +43,24 @@ export const useChat = () => {
     const resultado = await chatUseCase.enviarMensaje(contenido);
     setEnviando(false);
 
+    // Cuando envías un mensaje, dejas de escribir automáticamente
+    if (resultado.success && currentUser) {
+      await notificarEscribiendo(false);
+    }
+
     return resultado;
-  }, []);
+  }, [currentUser]);
+
+  // Notificar escribiendo (simplificado)
+  const notificarEscribiendo = useCallback(async (isTyping: boolean) => {
+    if (!currentUser) return;
+    
+    await chatUseCase.notificarEscribiendo(
+      currentUser.id,
+      currentUser.email,
+      isTyping
+    );
+  }, [currentUser]);
 
   // Eliminar mensaje
   const eliminarMensaje = useCallback(async (mensajeId: string) => {
@@ -37,15 +71,13 @@ export const useChat = () => {
     return resultado;
   }, []);
 
-  // Suscribirse a mensajes en tiempo real
+  // Suscribirse a mensajes y typing
   useEffect(() => {
-    // Cargar mensajes iniciales
     cargarMensajes();
 
     // Suscribirse a nuevos mensajes
     const desuscribir = chatUseCase.suscribirseAMensajes((nuevoMensaje) => {
       setMensajes(prev => {
-        // Evitar duplicados
         if (prev.some(m => m.id === nuevoMensaje.id)) {
           return prev;
         }
@@ -53,11 +85,55 @@ export const useChat = () => {
       });
     });
 
-    // Limpiar suscripción al desmontar
+    // Suscribirse a typing events
+    const desuscribirTyping = chatUseCase.suscribirseAEscritura((payload: any) => {
+      console.log('🎯 Payload typing recibido:', payload);
+      
+      const { userId, email, isTyping } = payload;
+
+      // Ignorar nuestros propios eventos de typing
+      if (currentUser && userId === currentUser.id) {
+        return;
+      }
+
+      setTypingUsers(prev => {
+        if (!userId) return prev;
+
+        // Limpiar timeout anterior si existe
+        const existingTimeout = typingTimeouts.current.get(userId);
+        if (existingTimeout) {
+          clearTimeout(existingTimeout);
+        }
+
+        // Filtrar entrada existente
+        const filtered = prev.filter(p => p.userId !== userId);
+
+        if (isTyping) {
+          // Auto-limpiar después de 3 segundos si no recibimos más eventos
+          const timeout = setTimeout(() => {
+            setTypingUsers(current => current.filter(p => p.userId !== userId));
+            typingTimeouts.current.delete(userId);
+          }, 3000);
+
+          typingTimeouts.current.set(userId, timeout);
+
+          return [...filtered, { userId, email, isTyping }];
+        } else {
+          typingTimeouts.current.delete(userId);
+          return filtered;
+        }
+      });
+    });
+
     return () => {
       desuscribir();
+      desuscribirTyping();
+      
+      // Limpiar todos los timeouts
+      typingTimeouts.current.forEach(timeout => clearTimeout(timeout));
+      typingTimeouts.current.clear();
     };
-  }, [cargarMensajes]);
+  }, [cargarMensajes, currentUser]);
 
   return {
     mensajes,
@@ -66,5 +142,8 @@ export const useChat = () => {
     enviarMensaje,
     eliminarMensaje,
     recargarMensajes: cargarMensajes,
+    typingUsers,
+    notificarEscribiendo,
+    currentUser,
   };
 };

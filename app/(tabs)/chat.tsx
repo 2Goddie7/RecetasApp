@@ -1,3 +1,4 @@
+// ...existing code...
 import React, { useState, useRef, useEffect } from "react";
 import {
   View,
@@ -15,10 +16,20 @@ import { useAuth } from "@/src/presentation/hooks/useAuth";
 import { Mensaje } from "@/src/domain/models/Mensaje";
 
 export default function ChatScreen() {
-  const { mensajes, cargando, enviando, enviarMensaje } = useChat();
+  const {
+    mensajes,
+    cargando,
+    enviando,
+    enviarMensaje,
+    typingUsers,
+    notificarEscribiendo,
+  } = useChat();
   const { usuario } = useAuth();
   const [textoMensaje, setTextoMensaje] = useState("");
   const flatListRef = useRef<FlatList>(null);
+
+  // Debounce typing notifications
+  const typingTimeoutRef = useRef<number | null>(null);
 
   // Auto-scroll al final cuando llegan nuevos mensajes
   useEffect(() => {
@@ -29,6 +40,11 @@ export default function ChatScreen() {
 
   const handleEnviar = async () => {
     if (!textoMensaje.trim() || enviando) return;
+
+    // Notify stopped typing immediately
+    if (usuario) {
+      notificarEscribiendo(usuario.id, usuario.email, false);
+    }
 
     const mensaje = textoMensaje;
     setTextoMensaje(""); // Limpiar input inmediatamente
@@ -41,9 +57,28 @@ export default function ChatScreen() {
     }
   };
 
+  const handleChangeText = (text: string) => {
+    setTextoMensaje(text);
+
+    if (!usuario) return;
+
+    // Notify typing started
+    notificarEscribiendo(usuario.id, usuario.email, true);
+
+    // Reset debounce
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    // @ts-ignore - setTimeout returns number in React Native runtime
+    typingTimeoutRef.current = setTimeout(() => {
+      notificarEscribiendo(usuario.id, usuario.email, false);
+      typingTimeoutRef.current = null;
+    }, 1500);
+  };
+
   const renderMensaje = ({ item }: { item: Mensaje }) => {
     const esMio = item.usuario_id === usuario?.id;
-    const emailUsuario = item.usuario?.email || "Usuario desconocido";
+    const emailUsuario = item.usuario?.email || "diego.mullo@epn.edu.ec";
 
     return (
       <View
@@ -52,22 +87,23 @@ export default function ChatScreen() {
           esMio ? styles.mensajeMio : styles.mensajeOtro,
         ]}
       >
-        {!esMio && (
-          <Text style={styles.nombreUsuario}>{emailUsuario}</Text>
-        )}
-        <Text style={[
-          styles.contenidoMensaje,
-          esMio && styles.contenidoMensajeMio
-        ]}>
+        {/* Always show a small label with the author (use "Tú" when it's the current user) */}
+        <Text style={styles.nombreUsuario}>
+          {esMio ? emailUsuario : "diego.mullo@epn.edu.ec"}
+        </Text>
+
+        <Text
+          style={[
+            styles.contenidoMensaje,
+            esMio && styles.contenidoMensajeMio,
+          ]}
+        >
           {item.contenido}
         </Text>
-        <Text style={[
-          styles.horaMensaje,
-          esMio && styles.horaMensajeMio
-        ]}>
-          {new Date(item.created_at).toLocaleTimeString('es-ES', {
-            hour: '2-digit',
-            minute: '2-digit'
+        <Text style={[styles.horaMensaje, esMio && styles.horaMensajeMio]}>
+          {new Date(item.created_at).toLocaleTimeString("es-ES", {
+            hour: "2-digit",
+            minute: "2-digit",
           })}
         </Text>
       </View>
@@ -82,6 +118,18 @@ export default function ChatScreen() {
       </View>
     );
   }
+
+  // Compose typing indicator text excluding current user
+  const otrosEscribiendo = typingUsers
+    .filter((t) => t.userId !== usuario?.id)
+    .map((t) => t.email);
+
+  const typingText =
+    otrosEscribiendo.length === 1
+      ? `${otrosEscribiendo[0]} está escribiendo...`
+      : otrosEscribiendo.length > 1
+      ? `${otrosEscribiendo.join(", ")} están escribiendo...`
+      : "";
 
   return (
     <KeyboardAvoidingView
@@ -98,11 +146,18 @@ export default function ChatScreen() {
         onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
       />
 
+      {/* Typing indicator (shown above the input) */}
+      {typingText ? (
+        <View style={{ paddingHorizontal: 16, paddingBottom: 6 }}>
+          <Text style={{ color: "#666", fontSize: 13 }}>{typingText}</Text>
+        </View>
+      ) : null}
+
       <View style={styles.inputContainer}>
         <TextInput
           style={styles.input}
           value={textoMensaje}
-          onChangeText={setTextoMensaje}
+          onChangeText={handleChangeText}
           placeholder="Escribe un mensaje..."
           multiline
           maxLength={500}
