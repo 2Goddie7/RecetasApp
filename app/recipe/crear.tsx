@@ -23,7 +23,7 @@ import {
 
 export default function CrearRecetaScreen() {
   const { usuario, esChef } = useAuth();
-  const { crear, seleccionarImagen } = useRecipes();
+  const { crear, seleccionarImagen, tomarFoto } = useRecipes(); // ✅ Agregamos tomarFoto
   const router = useRouter();
 
   const [titulo, setTitulo] = useState("");
@@ -49,6 +49,37 @@ export default function CrearRecetaScreen() {
     if (uri) {
       setImagenUri(uri);
     }
+  };
+
+  // ✅ Nueva función para tomar foto
+  const handleTomarFoto = async () => {
+    const uri = await tomarFoto();
+    if (uri) {
+      setImagenUri(uri);
+    }
+  };
+
+  // ✅ Función para mostrar opciones de imagen
+  const mostrarOpcionesImagen = () => {
+    Alert.alert(
+      "Agregar Imagen",
+      "Selecciona una opción",
+      [
+        {
+          text: "Tomar Foto",
+          onPress: handleTomarFoto,
+        },
+        {
+          text: "Elegir de Galería",
+          onPress: handleSeleccionarImagen,
+        },
+        {
+          text: "Cancelar",
+          style: "cancel",
+        },
+      ],
+      { cancelable: true }
+    );
   };
 
   const handleCrear = async () => {
@@ -159,9 +190,10 @@ export default function CrearRecetaScreen() {
           ))}
         </View>
 
+        {/* ✅ Botón actualizado con opciones */}
         <TouchableOpacity
           style={[globalStyles.button, globalStyles.buttonSecondary]}
-          onPress={handleSeleccionarImagen}
+          onPress={mostrarOpcionesImagen}
         >
           <Text style={globalStyles.buttonText}>
             {imagenUri ? "📷 Cambiar Foto" : "📷 Agregar Foto"}
@@ -169,7 +201,15 @@ export default function CrearRecetaScreen() {
         </TouchableOpacity>
 
         {imagenUri && (
-          <Image source={{ uri: imagenUri }} style={styles.vistaPrevia} />
+          <View>
+            <Image source={{ uri: imagenUri }} style={styles.vistaPrevia} />
+            <TouchableOpacity
+              style={styles.botonEliminarImagen}
+              onPress={() => setImagenUri(null)}
+            >
+              <Text style={styles.textoEliminarImagen}>× Quitar imagen</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         <TouchableOpacity
@@ -243,6 +283,15 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: borderRadius.md,
     marginVertical: spacing.md,
+  },
+  botonEliminarImagen: {
+    alignSelf: "center",
+    padding: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  textoEliminarImagen: {
+    color: colors.danger,
+    fontSize: fontSize.sm,
   },
   botonCrear: {
     marginTop: spacing.sm,

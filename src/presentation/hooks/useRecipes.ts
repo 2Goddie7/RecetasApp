@@ -46,17 +46,22 @@ export function useRecipes() {
     return resultado;
   };
 
+  // ✅ Actualizado para soportar cambio de imagen
   const actualizar = async (
     id: string,
     titulo: string,
     descripcion: string,
-    ingredientes: string[]
+    ingredientes: string[],
+    imagenUri?: string,
+    imagenActual?: string
   ) => {
     const resultado = await recipesUseCase.actualizarReceta(
       id,
       titulo,
       descripcion,
-      ingredientes
+      ingredientes,
+      imagenUri,
+      imagenActual
     );
     if (resultado.success) {
       await cargarRecetas();
@@ -76,6 +81,11 @@ export function useRecipes() {
     return await recipesUseCase.seleccionarImagen();
   };
 
+  // ✅ Nuevo método para tomar foto
+  const tomarFoto = async () => {
+    return await recipesUseCase.tomarFoto();
+  };
+
   return {
     recetas,
     cargando,
@@ -85,5 +95,6 @@ export function useRecipes() {
     actualizar,
     eliminar,
     seleccionarImagen,
+    tomarFoto, // ✅ Exportar el nuevo método
   };
 }

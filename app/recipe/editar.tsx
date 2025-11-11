@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,12 +14,12 @@ import {
 import { useAuth } from "../../src/presentation/hooks/useAuth";
 import { useRecipes } from "../../src/presentation/hooks/useRecipes";
 import { globalStyles } from "../../src/styles/globalStyles";
-import { colors, fontSize, spacing } from "../../src/styles/theme";
+import { borderRadius, colors, fontSize, spacing } from "../../src/styles/theme";
 
 export default function EditarRecetaScreen() {
   const { id } = useLocalSearchParams();
   const { usuario } = useAuth();
-  const { recetas, actualizar } = useRecipes();
+  const { recetas, actualizar, seleccionarImagen, tomarFoto } = useRecipes(); // ✅ Agregamos tomarFoto
   const router = useRouter();
 
   const receta = recetas.find((r) => r.id === id);
@@ -27,6 +28,8 @@ export default function EditarRecetaScreen() {
   const [descripcion, setDescripcion] = useState("");
   const [ingrediente, setIngrediente] = useState("");
   const [ingredientes, setIngredientes] = useState<string[]>([]);
+  const [imagenUri, setImagenUri] = useState<string | null>(null); // ✅ Nueva imagen seleccionada
+  const [imagenActual, setImagenActual] = useState<string | null>(null); // ✅ Imagen actual de la receta
   const [cargando, setCargando] = useState(false);
 
   // Cargar datos de la receta al iniciar
@@ -35,6 +38,7 @@ export default function EditarRecetaScreen() {
       setTitulo(receta.titulo);
       setDescripcion(receta.descripcion);
       setIngredientes(receta.ingredientes);
+      setImagenActual(receta.imagen_url || null); // ✅ Guardar imagen actual
     }
   }, [receta]);
 
@@ -74,6 +78,45 @@ export default function EditarRecetaScreen() {
     setIngredientes(ingredientes.filter((_, i) => i !== index));
   };
 
+  // ✅ Función para seleccionar imagen de galería
+  const handleSeleccionarImagen = async () => {
+    const uri = await seleccionarImagen();
+    if (uri) {
+      setImagenUri(uri);
+    }
+  };
+
+  // ✅ Función para tomar foto
+  const handleTomarFoto = async () => {
+    const uri = await tomarFoto();
+    if (uri) {
+      setImagenUri(uri);
+    }
+  };
+
+  // ✅ Función para mostrar opciones de imagen
+  const mostrarOpcionesImagen = () => {
+    Alert.alert(
+      "Cambiar Imagen",
+      "Selecciona una opción",
+      [
+        {
+          text: "Tomar Foto",
+          onPress: handleTomarFoto,
+        },
+        {
+          text: "Elegir de Galería",
+          onPress: handleSeleccionarImagen,
+        },
+        {
+          text: "Cancelar",
+          style: "cancel",
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
   const handleGuardar = async () => {
     if (!titulo || !descripcion || ingredientes.length === 0) {
       Alert.alert("Error", "Completa todos los campos");
@@ -85,7 +128,9 @@ export default function EditarRecetaScreen() {
       receta.id,
       titulo,
       descripcion,
-      ingredientes
+      ingredientes,
+      imagenUri || undefined, // ✅ Pasar nueva imagen si existe
+      imagenActual || undefined // ✅ Pasar imagen actual para eliminarla si es necesario
     );
     setCargando(false);
 
@@ -97,6 +142,9 @@ export default function EditarRecetaScreen() {
       Alert.alert("Error", resultado.error || "No se pudo actualizar");
     }
   };
+
+  // ✅ Determinar qué imagen mostrar
+  const imagenParaMostrar = imagenUri || imagenActual;
 
   return (
     <ScrollView style={globalStyles.container}>
@@ -156,9 +204,50 @@ export default function EditarRecetaScreen() {
           ))}
         </View>
 
-        <Text style={styles.notaImagen}>
-          💡 Nota: La imagen no se puede cambiar por ahora
-        </Text>
+        {/* ✅ Sección de imagen actualizada */}
+        <Text style={globalStyles.subtitle}>Imagen:</Text>
+        
+        {imagenParaMostrar && (
+          <View>
+            <Image 
+              source={{ uri: imagenParaMostrar }} 
+              style={styles.vistaPrevia} 
+            />
+            {imagenUri && (
+              <Text style={styles.textoNuevaImagen}>
+                ✨ Nueva imagen seleccionada
+              </Text>
+            )}
+          </View>
+        )}
+
+        <View style={styles.contenedorBotonesImagen}>
+          <TouchableOpacity
+            style={[
+              globalStyles.button,
+              globalStyles.buttonSecondary,
+              styles.botonImagen,
+            ]}
+            onPress={mostrarOpcionesImagen}
+          >
+            <Text style={globalStyles.buttonText}>
+              📷 {imagenParaMostrar ? "Cambiar" : "Agregar"} Foto
+            </Text>
+          </TouchableOpacity>
+
+          {imagenUri && (
+            <TouchableOpacity
+              style={[
+                globalStyles.button,
+                globalStyles.buttonDanger,
+                styles.botonImagen,
+              ]}
+              onPress={() => setImagenUri(null)}
+            >
+              <Text style={globalStyles.buttonText}>❌ Cancelar cambio</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         <TouchableOpacity
           style={[
@@ -226,11 +315,26 @@ const styles = StyleSheet.create({
     fontSize: fontSize.lg,
     fontWeight: "bold",
   },
-  notaImagen: {
+  vistaPrevia: {
+    width: "100%",
+    height: 200,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.sm,
+  },
+  textoNuevaImagen: {
     fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    marginBottom: spacing.lg,
+    color: colors.success,
+    textAlign: "center",
+    marginBottom: spacing.sm,
     fontStyle: "italic",
+  },
+  contenedorBotonesImagen: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  botonImagen: {
+    flex: 1,
   },
   botonGuardar: {
     padding: spacing.lg,

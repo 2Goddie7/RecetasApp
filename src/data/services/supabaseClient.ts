@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
 import "react-native-url-polyfill/auto";
 
@@ -13,13 +14,12 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   );
 }
 
-// Creamos el cliente de Supabase
+// Creamos el cliente de Supabase con persistencia
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    // No usamos AsyncStorage como pidió el profe
-    storage: undefined,
+    storage: AsyncStorage, // ✅ Ahora usamos AsyncStorage para persistir la sesión
     autoRefreshToken: true,
-    persistSession: false,
+    persistSession: true, // ✅ Activamos la persistencia de sesión
     detectSessionInUrl: false,
   },
 });

@@ -71,20 +71,36 @@ export class RecipesUseCase {
     }
   }
 
-  // Actualizar receta existente
+  // Actualizar receta existente - ✅ Ahora permite cambiar la imagen
   async actualizarReceta(
     id: string,
     titulo: string,
     descripcion: string,
-    ingredientes: string[]
+    ingredientes: string[],
+    imagenUri?: string, // ✅ Nuevo parámetro opcional
+    imagenActual?: string // ✅ Para eliminar la imagen anterior si existe
   ) {
     try {
+      let imagenUrl = imagenActual; // Mantener la imagen actual por defecto
+
+      // Si hay una nueva imagen, la subimos
+      if (imagenUri) {
+        // Eliminar la imagen anterior del storage si existe
+        if (imagenActual) {
+          await this.eliminarImagen(imagenActual);
+        }
+        
+        // Subir la nueva imagen
+        imagenUrl = await this.subirImagen(imagenUri);
+      }
+
       const { data, error } = await supabase
         .from("recetas")
         .update({
           titulo,
           descripcion,
           ingredientes,
+          imagen_url: imagenUrl, // ✅ Actualizar la URL de la imagen
         })
         .eq("id", id)
         .select()
@@ -100,6 +116,19 @@ export class RecipesUseCase {
   // Eliminar receta
   async eliminarReceta(id: string) {
     try {
+      // Primero obtenemos la receta para eliminar su imagen
+      const { data: receta } = await supabase
+        .from("recetas")
+        .select("imagen_url")
+        .eq("id", id)
+        .single();
+
+      // Eliminar la imagen del storage si existe
+      if (receta?.imagen_url) {
+        await this.eliminarImagen(receta.imagen_url);
+      }
+
+      // Eliminar la receta de la base de datos
       const { error } = await supabase.from("recetas").delete().eq("id", id);
 
       if (error) throw error;
@@ -141,6 +170,25 @@ export class RecipesUseCase {
     }
   }
 
+  // ✅ Nuevo método para eliminar imagen del storage
+  private async eliminarImagen(imagenUrl: string): Promise<void> {
+    try {
+      // Extraer el nombre del archivo de la URL
+      const nombreArchivo = imagenUrl.split("/").pop();
+      if (!nombreArchivo) return;
+
+      const { error } = await supabase.storage
+        .from("recetas-fotos")
+        .remove([nombreArchivo]);
+
+      if (error) {
+        console.log("Error al eliminar imagen:", error);
+      }
+    } catch (error) {
+      console.log("Error al eliminar imagen:", error);
+    }
+  }
+
   // Seleccionar imagen de la galería
   async seleccionarImagen(): Promise<string | null> {
     try {
@@ -168,6 +216,35 @@ export class RecipesUseCase {
       return null;
     } catch (error) {
       console.log("Error al seleccionar imagen:", error);
+      return null;
+    }
+  }
+
+  // ✅ Nuevo método para tomar foto con la cámara
+  async tomarFoto(): Promise<string | null> {
+    try {
+      // Pedir permisos de cámara
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+
+      if (status !== "granted") {
+        alert("Necesitamos permisos para acceder a tu cámara");
+        return null;
+      }
+
+      // Abrir cámara
+      const resultado = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!resultado.canceled) {
+        return resultado.assets[0].uri;
+      }
+
+      return null;
+    } catch (error) {
+      console.log("Error al tomar foto:", error);
       return null;
     }
   }
