@@ -1,19 +1,19 @@
 // ...existing code...
-import React, { useState, useRef, useEffect } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  FlatList,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  ActivityIndicator,
-} from "react-native";
-import { useChat } from "@/src/presentation/hooks/useChat";
-import { useAuth } from "@/src/presentation/hooks/useAuth";
 import { Mensaje } from "@/src/domain/models/Mensaje";
+import { useAuth } from "@/src/presentation/hooks/useAuth";
+import { useChat } from "@/src/presentation/hooks/useChat";
+import React, { useEffect, useRef, useState } from "react";
+import {
+    ActivityIndicator,
+    FlatList,
+    KeyboardAvoidingView,
+    Platform,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from "react-native";
 
 export default function ChatScreen() {
   const {
